@@ -1,5 +1,6 @@
 ﻿using Microsoft.Win32;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
@@ -93,6 +94,29 @@ namespace FolderThumbnailFix
                         Process.Start("explorer.exe");
                         break;
 
+                    // Apply any icon style: FolderThumbnailFix.exe /apply "MyStyle.ico"
+                    // (a bare file name is looked up in AppParts\Icons)
+                    case "/apply":
+                        if (args.Length < 2) return;
+                        RunUAC(myExe, $"/applyUAC \"{ResolveStyle(args[1])}\"");
+                        break;
+
+                    case "/applyuac":
+                        if (args.Length < 2) return;
+                        if (!IsValidStyleIcon(args[1])) return;
+                        KillExplorer();
+                        RunMeTrusted($"/ApplyTrusted \"{args[1]}\"");
+                        Thread.Sleep(1000);
+                        ResetThumbCache();
+                        Thread.Sleep(1000);
+                        Process.Start("explorer.exe");
+                        break;
+
+                    case "/applytrusted":
+                        if (args.Length < 2) return;
+                        if (IsValidStyleIcon(args[1])) ReplaceIcon(args[1]);
+                        break;
+
                     case "/installtrusted":
                         ReplaceIcon(iconFull);
                         break;
@@ -164,8 +188,59 @@ namespace FolderThumbnailFix
         {
             return DeleteFile(fileName + ":Zone.Identifier");
         }
+
+        // Turn a bare file name into a full path inside AppParts\Icons
+        static string ResolveStyle(string style)
+        {
+            if (Path.IsPathRooted(style)) return style;
+            return Path.Combine(Icons, style);
+        }
+
+        // Only allow .ico files that live in AppParts\Icons to be written into the system file
+        static bool IsValidStyleIcon(string path)
+        {
+            try
+            {
+                string full = Path.GetFullPath(path);
+                string dir = Path.GetFullPath(Icons).TrimEnd('\\') + "\\";
+                return full.StartsWith(dir, StringComparison.OrdinalIgnoreCase)
+                    && full.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)
+                    && File.Exists(full);
+            }
+            catch { return false; }
+        }
+
+        // Any extra .ico files the user has dropped into AppParts\Icons
+        static string[] GetCustomStyles()
+        {
+            List<string> styles = new List<string>();
+            try
+            {
+                foreach (string file in Directory.GetFiles(Icons, "*.ico"))
+                {
+                    string name = Path.GetFileName(file);
+                    if (name.Equals(Path.GetFileName(myIcon), StringComparison.OrdinalIgnoreCase)) continue;
+                    if (name.Equals(Path.GetFileName(iconFull), StringComparison.OrdinalIgnoreCase)) continue;
+                    if (name.Equals(Path.GetFileName(iconHalf), StringComparison.OrdinalIgnoreCase)) continue;
+                    styles.Add(file);
+                }
+            }
+            catch { }
+            styles.Sort(StringComparer.OrdinalIgnoreCase);
+            return styles.ToArray();
+        }
+
         static void InstallRemove()
         {
+            // If extra styles are present, show the picker instead of the two-button dialog
+            string[] custom = GetCustomStyles();
+            if (custom.Length > 0)
+            {
+                string chosen = StylePicker.Show(sSetup, myName, custom);
+                if (chosen != null) RunUAC(myExe, $"/applyUAC \"{chosen}\"");
+                return;
+            }
+
             DialogResult result = TwoChoiceBox.Show(sSetup, myName, "", "");
 
             if (result == DialogResult.Yes)
@@ -623,6 +698,162 @@ namespace FolderThumbnailFix
                 using (var TwoChoiceBox = new TwoChoiceBox(message, caption, button1, button2))
                 {
                     return TwoChoiceBox.ShowDialog();
+                }
+            }
+        }
+
+        // Dialog for choosing between the built-in styles and any custom .ico styles
+        public class StylePicker : Form
+        {
+            private ListView list;
+            private ImageList images;
+            private Button buttonApply;
+            private Button buttonCancel;
+            private int imgSize;
+            public string SelectedIcon = null;
+
+            public StylePicker(string message, string caption, string[] customStyles)
+            {
+                Icon = new Icon(myIcon);
+                Text = caption;
+                StartPosition = FormStartPosition.CenterScreen;
+                FormBorderStyle = FormBorderStyle.FixedDialog;
+                MaximizeBox = false;
+                MinimizeBox = false;
+                ClientSize = new Size((int)(460 * ScaleFactor), (int)(380 * ScaleFactor));
+
+                Label messageLabel = new Label();
+                messageLabel.Text = message;
+                messageLabel.Font = new Font("Segoe UI", 10);
+                messageLabel.TextAlign = ContentAlignment.MiddleCenter;
+                messageLabel.Dock = DockStyle.Top;
+                messageLabel.Height = (int)(40 * ScaleFactor);
+
+                imgSize = (int)(96 * ScaleFactor);
+                images = new ImageList();
+                images.ColorDepth = ColorDepth.Depth32Bit;
+                images.ImageSize = new Size(imgSize, imgSize);
+
+                list = new ListView();
+                list.View = View.LargeIcon;
+                list.LargeImageList = images;
+                list.MultiSelect = false;
+                list.HideSelection = false;
+                list.BorderStyle = BorderStyle.None;
+                list.Font = new Font("Segoe UI", 9);
+                list.Dock = DockStyle.Fill;
+                list.ItemActivate += (s, e) => Accept();
+                list.SelectedIndexChanged += (s, e) => { buttonApply.Enabled = list.SelectedItems.Count > 0; };
+
+                // Built-in styles first, then anything found in the Icons folder
+                AddStyle("Full size", iconFull, $@"{Icons}\ThumbFull.png");
+                AddStyle("Half (default)", iconHalf, $@"{Icons}\ThumbHalf.png");
+                foreach (string file in customStyles)
+                {
+                    // An optional PNG with the same name is used as the preview image
+                    AddStyle(Path.GetFileNameWithoutExtension(file), file, Path.ChangeExtension(file, ".png"));
+                }
+
+                Panel bottom = new Panel();
+                bottom.Dock = DockStyle.Bottom;
+                bottom.Height = (int)(44 * ScaleFactor);
+
+                buttonCancel = new Button();
+                buttonCancel.Text = "Cancel";
+                buttonCancel.DialogResult = DialogResult.Cancel;
+                buttonCancel.Width = (int)(80 * ScaleFactor);
+                buttonCancel.Height = (int)(28 * ScaleFactor);
+                buttonCancel.Left = bottom.ClientSize.Width - buttonCancel.Width - (int)(12 * ScaleFactor);
+                buttonCancel.Top = (int)(8 * ScaleFactor);
+                buttonCancel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+                buttonApply = new Button();
+                buttonApply.Text = "Apply";
+                buttonApply.Enabled = false;
+                buttonApply.Width = (int)(80 * ScaleFactor);
+                buttonApply.Height = (int)(28 * ScaleFactor);
+                buttonApply.Left = buttonCancel.Left - buttonApply.Width - (int)(8 * ScaleFactor);
+                buttonApply.Top = (int)(8 * ScaleFactor);
+                buttonApply.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                buttonApply.Click += (s, e) => Accept();
+
+                bottom.Controls.Add(buttonApply);
+                bottom.Controls.Add(buttonCancel);
+                CancelButton = buttonCancel;
+
+                if (Dark)
+                {
+                    DarkTitleBar(Handle);
+                    BackColor = Color.FromArgb(32, 32, 32);
+                    ForeColor = Color.White;
+                    list.BackColor = Color.FromArgb(32, 32, 32);
+                    list.ForeColor = Color.White;
+                    foreach (Button b in new Button[] { buttonApply, buttonCancel })
+                    {
+                        b.FlatStyle = FlatStyle.Flat;
+                        b.BackColor = Color.FromArgb(60, 60, 60);
+                        b.FlatAppearance.MouseOverBackColor = Color.Black;
+                    }
+                }
+
+                // Fill control first, then the docked edges
+                Controls.Add(list);
+                Controls.Add(bottom);
+                Controls.Add(messageLabel);
+            }
+
+            private void AddStyle(string label, string iconPath, string previewPng)
+            {
+                images.Images.Add(MakePreview(iconPath, previewPng, imgSize));
+                ListViewItem item = new ListViewItem(label, images.Images.Count - 1);
+                item.Tag = iconPath;
+                list.Items.Add(item);
+            }
+
+            // Mask icons can be fully transparent, so prefer a PNG preview if there is one;
+            // otherwise draw the icon over a gray background so it is visible.
+            private static Bitmap MakePreview(string iconPath, string previewPng, int size)
+            {
+                Bitmap bmp = new Bitmap(size, size);
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    try
+                    {
+                        if (File.Exists(previewPng))
+                        {
+                            using (Image img = Image.FromFile(previewPng))
+                            {
+                                g.DrawImage(img, 0, 0, size, size);
+                            }
+                        }
+                        else
+                        {
+                            g.Clear(Color.FromArgb(128, 128, 128));
+                            using (Icon ico = new Icon(iconPath, new Size(size, size)))
+                            {
+                                g.DrawIcon(ico, new Rectangle(0, 0, size, size));
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                return bmp;
+            }
+
+            private void Accept()
+            {
+                if (list.SelectedItems.Count == 0) return;
+                SelectedIcon = (string)list.SelectedItems[0].Tag;
+                DialogResult = DialogResult.OK;
+                Close();
+            }
+
+            public static string Show(string message, string caption, string[] customStyles)
+            {
+                using (var picker = new StylePicker(message, caption, customStyles))
+                {
+                    return picker.ShowDialog() == DialogResult.OK ? picker.SelectedIcon : null;
                 }
             }
         }
