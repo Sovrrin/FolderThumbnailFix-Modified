@@ -31,7 +31,7 @@ namespace FolderIconEditor
         static string tempFile = Path.Combine(Path.GetTempPath(), "imageres.dll.mun");
         static string Option = "";
 
-        static string sSetup = "Select thumbnail style:";
+        static string sSetup = "Select folder style:";
         static string sOK = "OK";
         static string sBuildError = "Windows 11 required";
         static string sBuiltInMissing = "Built-in icons not found.\n\nThey should be in the AppParts\\BuiltIn folder.";
