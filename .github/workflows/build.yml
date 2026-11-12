@@ -1,1 +1,14 @@
 
+name: Build
+on: [workflow_dispatch, push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - run: msbuild FolderThumbnailFix.sln /p:Configuration=Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FolderThumbnailFix
+          path: "**/bin/Release/FolderThumbnailFix.exe"
