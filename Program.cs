@@ -11,7 +11,7 @@ using System.ServiceProcess;
 using System.Threading;
 using System.Text;
 
-namespace FolderThumbnailFix
+namespace FolderIconEditor
 {
     class Program
     {
@@ -20,7 +20,7 @@ namespace FolderThumbnailFix
         static string myExe = System.Reflection.Assembly.GetExecutingAssembly().Location;
         static string appParts = $@"{myPath}\AppParts";
         static string Icons = $@"{myPath}\AppParts\Icons";
-        static string myIcon = $@"{Icons}\{myName}.ico";
+        static string myIcon = $@"{appParts}\{myName}.ico";
         static string iconFull = $@"{Icons}\Transparent.ico";
         static string iconHalf = $@"{Icons}\HalfMask.ico";
         static string ResourceHacker = $@"{appParts}\ResourceHacker\ResourceHacker.exe";
@@ -37,8 +37,6 @@ namespace FolderThumbnailFix
         static float ScaleFactor = GetScale();
         static bool Dark = isDark();
         static bool ctrlKey = false;
-
-        static string helpPage = "what-it-does";
 
         [STAThread]
         static void Main(string[] args)
@@ -94,7 +92,7 @@ namespace FolderThumbnailFix
                         Process.Start("explorer.exe");
                         break;
 
-                    // Apply any icon style: FolderThumbnailFix.exe /apply "MyStyle.ico"
+                    // Apply any icon style: FolderIconEditor.exe /apply "MyStyle.ico"
                     // (a bare file name is looked up in AppParts\Icons)
                     case "/apply":
                         if (args.Length < 2) return;
@@ -187,6 +185,14 @@ namespace FolderThumbnailFix
         public static bool UnblockFile(string fileName)
         {
             return DeleteFile(fileName + ":Zone.Identifier");
+        }
+
+        // App icon for the dialogs: AppParts\FolderIconEditor.ico, or the exe's own icon if that file is missing
+        static Icon GetAppIcon()
+        {
+            try { if (File.Exists(myIcon)) return new Icon(myIcon); } catch { }
+            try { return Icon.ExtractAssociatedIcon(myExe); } catch { }
+            return null;
         }
 
         // Turn a bare file name into a full path inside AppParts\Icons
@@ -408,14 +414,13 @@ namespace FolderThumbnailFix
         public class CustomMessageBox : Form
         {
             private Label messageLabel;
-            private Label buttonHelp;
             private Button buttonOK;
 
             public CustomMessageBox(string message, string caption)
             {
                 message = $"\n{message}";
 
-                Icon = new Icon(myIcon);
+                Icon = GetAppIcon();
                 StartPosition = FormStartPosition.Manual;
                 FormBorderStyle = FormBorderStyle.FixedDialog;
                 Text = caption;
@@ -435,24 +440,6 @@ namespace FolderThumbnailFix
                     SizeF size = g.MeasureString(message, new Font("Segoe UI", 10), Width);
                     Height = Math.Max(Height, (int)(size.Height + (int)(100 * ScaleFactor)));
                 }
-
-                buttonHelp = new Label();
-                Image image = Image.FromFile($@"{appParts}\Icons\Question.png");
-                Bitmap scaledImage = new Bitmap((int)(26 * ScaleFactor), (int)(26 * ScaleFactor));
-                using (Graphics g = Graphics.FromImage(scaledImage))
-                {
-                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    g.DrawImage(image, 0, 0, (int)(26 * ScaleFactor), (int)(26 * ScaleFactor));
-                }
-                buttonHelp.BackgroundImage = scaledImage;
-                buttonHelp.BackgroundImageLayout = ImageLayout.Stretch;
-                buttonHelp.Size = new Size((int)(26 * ScaleFactor), (int)(26 * ScaleFactor));
-                buttonHelp.FlatStyle = FlatStyle.Flat;
-                buttonHelp.Left = ClientSize.Width - (int)(30 * ScaleFactor);
-                buttonHelp.Top = (int)(4 * ScaleFactor);
-                buttonHelp.Click += ButtonHelp_Click;
-
-                messageLabel.Padding = new Padding(0, 0, (int)(26 * ScaleFactor), 0);
 
                 buttonOK = new Button();
                 buttonOK.Text = sOK;
@@ -481,7 +468,6 @@ namespace FolderThumbnailFix
                     ForeColor = Color.White;
                 }
 
-                Controls.Add(buttonHelp);
                 Controls.Add(buttonOK);
                 Controls.Add(messageLabel);
 
@@ -511,11 +497,8 @@ namespace FolderThumbnailFix
         public class TwoChoiceBox : Form
         {
             private Label messageLabel;
-            private Label buttonHelp;
             private Label buttonYes;
             private Label buttonNo;
-            Bitmap imageHelp;
-            Bitmap imageHelpHover;
             Bitmap imageYes;
             Bitmap imageYesHover;
             Bitmap imageNo;
@@ -525,7 +508,7 @@ namespace FolderThumbnailFix
             {
                 message = $"\n{message}";
 
-                Icon = new Icon(myIcon);
+                Icon = GetAppIcon();
                 StartPosition = FormStartPosition.Manual;
                 Text = caption;
                 Width = (int)(300 * ScaleFactor);
@@ -539,7 +522,6 @@ namespace FolderThumbnailFix
                 messageLabel.Font = new Font("Segoe UI", 10);
                 messageLabel.TextAlign = ContentAlignment.TopCenter;
                 messageLabel.Dock = DockStyle.Fill;
-                messageLabel.Padding = new Padding(0, 0, (int)(26 * ScaleFactor), 0);
 
                 using (Graphics g = CreateGraphics())
                 {
@@ -547,36 +529,8 @@ namespace FolderThumbnailFix
                     Height = Math.Max(Height, (int)(size.Height + (int)(100 * ScaleFactor)));
                 }
 
-                buttonHelp = new Label();
-				
-                Image image = Image.FromFile($@"{appParts}\Icons\Question.png");
-                imageHelp = new Bitmap((int)(26 * ScaleFactor), (int)(26 * ScaleFactor));
-                using (Graphics g = Graphics.FromImage(imageHelp))
-                {
-                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    g.DrawImage(image, 0, 0, (int)(26 * ScaleFactor), (int)(26 * ScaleFactor));
-                }
-
-                string hoverImage = "QuestionL.png";
-                if (Dark) hoverImage = "QuestionD.png";
-                image = Image.FromFile($@"{appParts}\Icons\{hoverImage}");
-                imageHelpHover = new Bitmap((int)(26 * ScaleFactor), (int)(26 * ScaleFactor));
-                using (Graphics g = Graphics.FromImage(imageHelpHover))
-                {
-                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    g.DrawImage(image, 0, 0, (int)(26 * ScaleFactor), (int)(26 * ScaleFactor));
-                }
-
-                buttonHelp.MouseEnter += buttonHelp_MouseEnter;
-                buttonHelp.MouseLeave += buttonHelp_MouseLeave;
-
-                buttonHelp.BackgroundImage = imageHelp;
-                buttonHelp.BackgroundImageLayout = ImageLayout.Stretch;
-                buttonHelp.Size = new Size((int)(26 * ScaleFactor), (int)(26 * ScaleFactor));
-                buttonHelp.FlatStyle = FlatStyle.Flat;
-                buttonHelp.Left = ClientSize.Width - (int)(30 * ScaleFactor);
-                buttonHelp.Top = (int)(4 * ScaleFactor);
-                buttonHelp.Click += ButtonHelp_Click;
+                Image image;
+                string hoverImage;
 
                 buttonYes = new Label();
 				
@@ -650,7 +604,6 @@ namespace FolderThumbnailFix
                     ForeColor = Color.White;
                 }
 
-                Controls.Add(buttonHelp);
                 Controls.Add(buttonYes);
                 Controls.Add(buttonNo);
                 Controls.Add(messageLabel);
@@ -669,14 +622,6 @@ namespace FolderThumbnailFix
                 Location = new Point(dialogX, dialogY);
             }
 
-            private void buttonHelp_MouseEnter(object sender, EventArgs e)
-            {
-                buttonHelp.BackgroundImage = imageHelpHover;
-            }
-            private void buttonHelp_MouseLeave(object sender, EventArgs e)
-            {
-                buttonHelp.BackgroundImage = imageHelp;
-            }
             private void buttonYes_MouseEnter(object sender, EventArgs e)
             {
                 buttonYes.BackgroundImage = imageYesHover;
@@ -715,7 +660,7 @@ namespace FolderThumbnailFix
 
             public StylePicker(string message, string caption, string[] customStyles)
             {
-                Icon = new Icon(myIcon);
+                Icon = GetAppIcon();
                 Text = caption;
                 StartPosition = FormStartPosition.CenterScreen;
                 FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -873,11 +818,6 @@ namespace FolderThumbnailFix
                     return picker.ShowDialog() == DialogResult.OK ? picker.SelectedIcon : null;
                 }
             }
-        }
-
-        static void ButtonHelp_Click(object sender, EventArgs e)
-        {
-            Process.Start("https://lesferch.github.io/FolderThumbnailFix#" + helpPage);
         }
     }
 
