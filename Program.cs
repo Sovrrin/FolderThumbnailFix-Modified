@@ -709,6 +709,7 @@ namespace FolderThumbnailFix
             private ImageList images;
             private Button buttonApply;
             private Button buttonCancel;
+            private Button buttonRestore;
             private int imgSize;
             public string SelectedIcon = null;
 
@@ -747,7 +748,7 @@ namespace FolderThumbnailFix
 
                 // Built-in styles first, then anything found in the Icons folder
                 AddStyle("Full size", iconFull, $@"{Icons}\ThumbFull.png");
-                AddStyle("Half (default)", iconHalf, $@"{Icons}\ThumbHalf.png");
+                AddStyle("Half cover", iconHalf, $@"{Icons}\ThumbHalf.png");
                 foreach (string file in customStyles)
                 {
                     // An optional PNG with the same name is used as the preview image
@@ -777,8 +778,24 @@ namespace FolderThumbnailFix
                 buttonApply.Anchor = AnchorStyles.Top | AnchorStyles.Right;
                 buttonApply.Click += (s, e) => Accept();
 
+                // Restores the stock Windows half-cover thumbnail style in one click
+                buttonRestore = new Button();
+                buttonRestore.Text = "Restore Windows default";
+                buttonRestore.Width = (int)(170 * ScaleFactor);
+                buttonRestore.Height = (int)(28 * ScaleFactor);
+                buttonRestore.Left = (int)(12 * ScaleFactor);
+                buttonRestore.Top = (int)(8 * ScaleFactor);
+                buttonRestore.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+                buttonRestore.Click += (s, e) =>
+                {
+                    SelectedIcon = iconHalf;
+                    DialogResult = DialogResult.OK;
+                    Close();
+                };
+
                 bottom.Controls.Add(buttonApply);
                 bottom.Controls.Add(buttonCancel);
+                bottom.Controls.Add(buttonRestore);
                 CancelButton = buttonCancel;
 
                 if (Dark)
@@ -788,7 +805,7 @@ namespace FolderThumbnailFix
                     ForeColor = Color.White;
                     list.BackColor = Color.FromArgb(32, 32, 32);
                     list.ForeColor = Color.White;
-                    foreach (Button b in new Button[] { buttonApply, buttonCancel })
+                    foreach (Button b in new Button[] { buttonApply, buttonCancel, buttonRestore })
                     {
                         b.FlatStyle = FlatStyle.Flat;
                         b.BackColor = Color.FromArgb(60, 60, 60);
