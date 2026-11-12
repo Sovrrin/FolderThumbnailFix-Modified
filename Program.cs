@@ -19,10 +19,11 @@ namespace FolderIconEditor
         static string myPath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
         static string myExe = System.Reflection.Assembly.GetExecutingAssembly().Location;
         static string appParts = $@"{myPath}\AppParts";
-        static string Icons = $@"{myPath}\AppParts\Icons";
+        static string Icons = $@"{myPath}\AppParts\Icons";       // user-supplied styles
+        static string BuiltIn = $@"{appParts}\BuiltIn";          // the app's own styles and preview images
         static string myIcon = $@"{appParts}\{myName}.ico";
-        static string iconFull = $@"{Icons}\Transparent.ico";
-        static string iconHalf = $@"{Icons}\HalfMask.ico";
+        static string iconFull = $@"{BuiltIn}\Transparent.ico";
+        static string iconHalf = $@"{BuiltIn}\HalfMask.ico";
         static string ResourceHacker = $@"{appParts}\ResourceHacker\ResourceHacker.exe";
         static string munFile = @"C:\Windows\SystemResources\imageres.dll.mun";
         static string oldFile = @"C:\Windows\SystemResources\imageres.dll.mun.old";
@@ -33,6 +34,7 @@ namespace FolderIconEditor
         static string sSetup = "Select thumbnail style:";
         static string sOK = "OK";
         static string sBuildError = "Windows 11 required";
+        static string sBuiltInMissing = "Built-in icons not found.\n\nThey should be in the AppParts\\BuiltIn folder.";
 
         static float ScaleFactor = GetScale();
         static bool Dark = isDark();
@@ -195,21 +197,29 @@ namespace FolderIconEditor
             return null;
         }
 
-        // Turn a bare file name into a full path inside AppParts\Icons
+        // Turn a bare file name into a full path (looked up in AppParts\Icons, then AppParts\BuiltIn)
         static string ResolveStyle(string style)
         {
             if (Path.IsPathRooted(style)) return style;
-            return Path.Combine(Icons, style);
+            string inIcons = Path.Combine(Icons, style);
+            if (!File.Exists(inIcons))
+            {
+                string inBuiltIn = Path.Combine(BuiltIn, style);
+                if (File.Exists(inBuiltIn)) return inBuiltIn;
+            }
+            return inIcons;
         }
 
-        // Only allow .ico files that live in AppParts\Icons to be written into the system file
+        // Only allow .ico files that live in AppParts\Icons or AppParts\BuiltIn to be written into the system file
         static bool IsValidStyleIcon(string path)
         {
             try
             {
                 string full = Path.GetFullPath(path);
-                string dir = Path.GetFullPath(Icons).TrimEnd('\\') + "\\";
-                return full.StartsWith(dir, StringComparison.OrdinalIgnoreCase)
+                string dirIcons = Path.GetFullPath(Icons).TrimEnd('\\') + "\\";
+                string dirBuiltIn = Path.GetFullPath(BuiltIn).TrimEnd('\\') + "\\";
+                return (full.StartsWith(dirIcons, StringComparison.OrdinalIgnoreCase)
+                        || full.StartsWith(dirBuiltIn, StringComparison.OrdinalIgnoreCase))
                     && full.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)
                     && File.Exists(full);
             }
@@ -224,10 +234,6 @@ namespace FolderIconEditor
             {
                 foreach (string file in Directory.GetFiles(Icons, "*.ico"))
                 {
-                    string name = Path.GetFileName(file);
-                    if (name.Equals(Path.GetFileName(myIcon), StringComparison.OrdinalIgnoreCase)) continue;
-                    if (name.Equals(Path.GetFileName(iconFull), StringComparison.OrdinalIgnoreCase)) continue;
-                    if (name.Equals(Path.GetFileName(iconHalf), StringComparison.OrdinalIgnoreCase)) continue;
                     styles.Add(file);
                 }
             }
@@ -238,6 +244,12 @@ namespace FolderIconEditor
 
         static void InstallRemove()
         {
+            if (!File.Exists(iconFull) || !File.Exists(iconHalf))
+            {
+                CustomMessageBox.Show(sBuiltInMissing, myName);
+                return;
+            }
+
             // If extra styles are present, show the picker instead of the two-button dialog
             string[] custom = GetCustomStyles();
             if (custom.Length > 0)
@@ -534,7 +546,7 @@ namespace FolderIconEditor
 
                 buttonYes = new Label();
 				
-                image = Image.FromFile($@"{appParts}\Icons\ThumbFull.png");
+                image = Image.FromFile($@"{BuiltIn}\ThumbFull.png");
                 imageYes = new Bitmap((int)(96 * ScaleFactor), (int)(96 * ScaleFactor));
                 using (Graphics g = Graphics.FromImage(imageYes))
                 {
@@ -544,7 +556,7 @@ namespace FolderIconEditor
 
                 hoverImage = "ThumbFullL.png";
                 if (Dark) hoverImage = "ThumbFullD.png";
-                image = Image.FromFile($@"{appParts}\Icons\{hoverImage}");
+                image = Image.FromFile($@"{BuiltIn}\{hoverImage}");
                 imageYesHover = new Bitmap((int)(96 * ScaleFactor), (int)(96 * ScaleFactor));
                 using (Graphics g = Graphics.FromImage(imageYesHover))
                 {
@@ -566,7 +578,7 @@ namespace FolderIconEditor
 
                 buttonNo = new Label();
 				
-                image = Image.FromFile($@"{appParts}\Icons\ThumbHalf.png");
+                image = Image.FromFile($@"{BuiltIn}\ThumbHalf.png");
                 imageNo = new Bitmap((int)(96 * ScaleFactor), (int)(96 * ScaleFactor));
                 using (Graphics g = Graphics.FromImage(imageNo))
                 {
@@ -576,7 +588,7 @@ namespace FolderIconEditor
 
                 hoverImage = "ThumbHalfL.png";
                 if (Dark) hoverImage = "ThumbHalfD.png";
-                image = Image.FromFile($@"{appParts}\Icons\{hoverImage}");
+                image = Image.FromFile($@"{BuiltIn}\{hoverImage}");
                 imageNoHover = new Bitmap((int)(96 * ScaleFactor), (int)(96 * ScaleFactor));
                 using (Graphics g = Graphics.FromImage(imageNoHover))
                 {
@@ -657,6 +669,12 @@ namespace FolderIconEditor
             private Button buttonRestore;
             private int imgSize;
             public string SelectedIcon = null;
+            private int cellWidth;
+            private int cellHeight;
+
+            [DllImport("user32.dll")]
+            private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+            private const int LVM_SETICONSPACING = 0x1035;
 
             public StylePicker(string message, string caption, string[] customStyles)
             {
@@ -666,7 +684,7 @@ namespace FolderIconEditor
                 FormBorderStyle = FormBorderStyle.FixedDialog;
                 MaximizeBox = false;
                 MinimizeBox = false;
-                ClientSize = new Size((int)(460 * ScaleFactor), (int)(380 * ScaleFactor));
+                ClientSize = new Size((int)(512 * ScaleFactor), (int)(512 * ScaleFactor));
 
                 Label messageLabel = new Label();
                 messageLabel.Text = message;
@@ -690,15 +708,25 @@ namespace FolderIconEditor
                 list.Dock = DockStyle.Fill;
                 list.ItemActivate += (s, e) => Accept();
                 list.SelectedIndexChanged += (s, e) => { buttonApply.Enabled = list.SelectedItems.Count > 0; };
+                list.HandleCreated += (s, e) => ApplySpacing();
 
                 // Built-in styles first, then anything found in the Icons folder
-                AddStyle("Full size", iconFull, $@"{Icons}\ThumbFull.png");
-                AddStyle("Half cover", iconHalf, $@"{Icons}\ThumbHalf.png");
+                AddStyle("Full size", iconFull, $@"{BuiltIn}\ThumbFull.png");
+                AddStyle("Half cover", iconHalf, $@"{BuiltIn}\ThumbHalf.png");
                 foreach (string file in customStyles)
                 {
                     // An optional PNG with the same name is used as the preview image
                     AddStyle(Path.GetFileNameWithoutExtension(file), file, Path.ChangeExtension(file, ".png"));
                 }
+
+                // Three tiles per row, spread evenly across the full width so there is no empty gap on the right.
+                // Rows are sized so three fit exactly; only reserve room for the scrollbar if it will appear.
+                int listHeight = ClientSize.Height - (int)(40 * ScaleFactor) - (int)(44 * ScaleFactor);
+                cellHeight = listHeight / 3;
+                int rows = (list.Items.Count + 2) / 3;
+                bool needsScroll = rows * cellHeight > listHeight;
+                int availWidth = ClientSize.Width - (needsScroll ? SystemInformation.VerticalScrollBarWidth : 0) - 2;
+                cellWidth = availWidth / 3;
 
                 Panel bottom = new Panel();
                 bottom.Dock = DockStyle.Bottom;
@@ -725,8 +753,8 @@ namespace FolderIconEditor
 
                 // Restores the stock Windows half-cover thumbnail style in one click
                 buttonRestore = new Button();
-                buttonRestore.Text = "Restore Windows default";
-                buttonRestore.Width = (int)(170 * ScaleFactor);
+                buttonRestore.Text = "Restore Default";
+                buttonRestore.Width = (int)(120 * ScaleFactor);
                 buttonRestore.Height = (int)(28 * ScaleFactor);
                 buttonRestore.Left = (int)(12 * ScaleFactor);
                 buttonRestore.Top = (int)(8 * ScaleFactor);
@@ -762,6 +790,12 @@ namespace FolderIconEditor
                 Controls.Add(list);
                 Controls.Add(bottom);
                 Controls.Add(messageLabel);
+            }
+
+            private void ApplySpacing()
+            {
+                // LVM_SETICONSPACING: low word = horizontal spacing, high word = vertical spacing (both include the icon)
+                SendMessage(list.Handle, LVM_SETICONSPACING, IntPtr.Zero, (IntPtr)((cellHeight << 16) | (cellWidth & 0xFFFF)));
             }
 
             private void AddStyle(string label, string iconPath, string previewPng)
